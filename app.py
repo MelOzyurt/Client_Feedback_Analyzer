@@ -5,8 +5,6 @@ import docx2txt
 import PyPDF2
 from io import StringIO
 from utils import preprocess_reviews, get_sentiment_summary, generate_swot_analysis
-
-# --- App Config ---
 st.set_page_config(page_title="🧠 Client Feedback Analyzer", layout="wide")
 st.title("🧠 Client Feedback Analyzer")
 st.markdown("Upload your customer feedback files or paste reviews directly. This AI-powered tool will analyze the sentiment, extract key insights, and generate a SWOT analysis.")
