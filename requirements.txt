@@ -1,5 +1,7 @@
 streamlit
-pandas
 openai
+pandas
+scikit-learn
+nltk
 docx2txt
 PyPDF2
