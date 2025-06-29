@@ -5,3 +5,4 @@ scikit-learn
 nltk
 docx2txt
 PyPDF2
+textblob
