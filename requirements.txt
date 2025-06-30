@@ -1,8 +1,11 @@
 streamlit
 openai
 pandas
+numpy
 scikit-learn
 nltk
 docx2txt
 PyPDF2
 textblob
+plotly
+firebase-admin

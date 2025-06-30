@@ -1,63 +1,146 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import re
 import openai
-import docx2txt
-import PyPDF2
-from io import StringIO
-from utils import preprocess_reviews, get_sentiment_summary, generate_swot_analysis
-st.set_page_config(page_title="🧠 Client Feedback Analyzer", layout="wide")
+
+from firebase_auth import init_firebase, verify_user
+from analysis_utils import *
+from utils_text import *
+from analysis_utils import t_test_analysis
+
+# ✅ Init Firebase
+init_firebase()
+
+# ✅ Streamlit Page Setup
+st.set_page_config(page_title="📊 Smart Data Analyzer", layout="wide")
 st.title("🧠 Client Feedback Analyzer")
-st.markdown("Upload your customer feedback files or paste reviews directly. This AI-powered tool will analyze the sentiment, extract key insights, and generate a SWOT analysis.")
 
-# --- Load OpenAI API ---
-try:
-    client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-except Exception as e:
-    st.warning("⚠️ Missing or invalid OpenAI API Key.")
-    st.stop()
+# ✅ Login Panel
+st.sidebar.header("🔐 Login")
+email = st.sidebar.text_input("Email")
+password = st.sidebar.text_input("Password", type="password")
+login = st.sidebar.button("Sign In")
 
-# --- Input Options ---
-input_method = st.radio("Choose input method:", ["📁 Upload File", "📝 Paste Text"])
-reviews = ""
+login_successful = False
+if login:
+    success, msg = verify_user(email, password)
+    if success:
+        st.success(msg)
+        login_successful = True
+    else:
+        st.error(msg)
 
-if input_method == "📁 Upload File":
-    uploaded_file = st.file_uploader("Upload feedback file (PDF, DOCX, CSV, TXT)", type=["pdf", "docx", "csv", "txt"])
-    if uploaded_file:
-        if uploaded_file.name.endswith(".pdf"):
-            pdf_reader = PyPDF2.PdfReader(uploaded_file)
-            reviews = "\n".join([page.extract_text() for page in pdf_reader.pages])
-        elif uploaded_file.name.endswith(".docx"):
-            reviews = docx2txt.process(uploaded_file)
-        elif uploaded_file.name.endswith(".csv"):
+if not login_successful:
+    st.info("Please log in to access the analyzer.")
+    st.stop()  # 👈 Giriş yoksa kalan kod çalışmaz
+
+# ✅ OpenAI API Client
+client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+# ✅ AI Yorumlama Fonksiyonu
+def ai_interpretation(prompt):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4-1106-preview",
+            messages=[
+                {"role": "system", "content": "You are a helpful AI assistant that analyzes data and provides insights."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
+            temperature=0.7
+        )
+        raw_message = response.choices[0].message.content.strip()
+        sentences = re.findall(r'[^.!?]*[.!?]', raw_message)
+        return ''.join(sentences).strip()
+    except Exception as e:
+        return f"**Error during AI interpretation:** {e}"
+
+# ✅ Dosya Yükleme
+uploaded_file = st.file_uploader(
+    "Upload your dataset (CSV, Excel, JSON, XML, Feather)",
+    type=["csv", "xlsx", "xls", "json", "xml", "feather"]
+)
+
+if uploaded_file:
+    try:
+        if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file)
-            col = st.selectbox("Select column containing reviews:", df.columns)
-            reviews = "\n".join(df[col].dropna().astype(str).tolist())
-        elif uploaded_file.name.endswith(".txt"):
-            stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
-            reviews = stringio.read()
+        elif uploaded_file.name.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(uploaded_file)
+        elif uploaded_file.name.endswith('.json'):
+            df = pd.read_json(uploaded_file)
+        elif uploaded_file.name.endswith('.xml'):
+            df = pd.read_xml(uploaded_file)
+        elif uploaded_file.name.endswith('.feather'):
+            df = pd.read_feather(uploaded_file)
+        else:
+            st.error("Unsupported file format.")
+            st.stop()
+    except Exception as e:
+        st.error(f"Failed to read file: {e}")
+        st.stop()
 
-elif input_method == "📝 Paste Text":
-    reviews = st.text_area("Paste your customer reviews here:")
+    # ✅ Veri Önizleme
+    st.subheader("🔍 Data Preview")
+    st.dataframe(df.head())
 
-# --- Analyze Button ---
-if st.button("🔍 Analyze Feedback") and reviews.strip():
-    with st.spinner("Analyzing reviews..."):
+    # ✅ Analiz Seçimi
+    option = st.selectbox("Select Analysis Type", [
+        "Numeric Summary", "Correlation Matrix", "Chi-Square Test", "T-Test"
+    ])
 
-        cleaned_reviews = preprocess_reviews(reviews)
-        sentiment_summary = get_sentiment_summary(cleaned_reviews, client)
-        swot_result = generate_swot_analysis(cleaned_reviews, client)
+    # 👇 Analizler
+    if option == "Numeric Summary":
+        result = analyze_numeric(df)
+        st.write("### 📊 Descriptive Statistics")
+        st.dataframe(result)
 
-        st.subheader("🧭 Sentiment Overview")
-        st.write(sentiment_summary)
+        ai_result = ai_interpretation(f"Analyze this:\n{result.to_string()}")
+        st.markdown("### 🧠 AI Insights")
+        st.write(ai_result)
 
-        st.subheader("📊 SWOT Analysis")
-        for key, value in swot_result.items():
-            st.markdown(f"**{key}:**")
-            st.write(value)
+    elif option == "Correlation Matrix":
+        st.write("### 📈 Correlation Matrix")
+        fig, corr_df = correlation_plot(df)
+        st.plotly_chart(fig, use_container_width=True)
 
-        st.success("✅ Analysis complete. Explore the insights above!")
-else:
-    st.info("Please upload a file or paste text and click Analyze.")
+        ai_result = ai_interpretation(f"Explain the matrix:\n{corr_df.to_string()}")
+        st.markdown("### 🧠 AI Insights")
+        st.write(ai_result)
 
-st.markdown("---")
-st.caption("Powered by GPT-4 | Developed by Mel Ozyurt")
+    elif option == "Chi-Square Test":
+        cats = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        if len(cats) >= 2:
+            col1 = st.selectbox("Select first categorical column", cats)
+            col2 = st.selectbox("Select second categorical column", [c for c in cats if c != col1])
+
+            result, p_val = chi_square_analysis(df, col1, col2)
+            st.write(f"**Chi-Square Test Result:** χ² = {result['chi2_stat']:.2f}, p = {result['p_value']:.4f}")
+            st.dataframe(result["contingency_table"])
+
+            ai_result = ai_interpretation(f"Chi-square between {col1} and {col2}:\nP={p_val}")
+            st.markdown("### 🧠 Data Insights")
+            st.write(ai_result)
+        else:
+            st.warning("Not enough categorical columns.")
+
+    elif option == "T-Test":
+        nums = df.select_dtypes(include=np.number).columns.tolist()
+        if len(nums) >= 2:
+            col1 = st.selectbox("Select first numeric column", nums)
+            col2 = st.selectbox("Select second numeric column", [c for c in nums if c != col1])
+
+            try:
+                result, p_val = t_test_analysis(df, col1, col2)
+                st.write(result)
+
+                ai_result = ai_interpretation(f"T-test result:\nP={p_val}, {col1} vs {col2}")
+                st.markdown("### 🧠 AI Insights")
+                st.write(ai_result)
+            except Exception as e:
+                st.error(f"T-Test Error: {e}")
+        else:
+            st.warning("Not enough numeric columns.")
+
+    st.success("✅ Analysis completed successfully!")
