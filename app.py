@@ -1,3 +1,8 @@
+# Client Feedback Analyser
+# Firebase login eklenmis hali
+
+# Client Feedback Analyzer
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,16 +10,15 @@ import re
 import openai
 
 from firebase_auth import init_firebase, verify_user
-from analysis_utils import *
-from utils_text import *
-from analysis_utils import t_test_analysis
+from utils import preprocess_reviews, get_sentiment_summary, generate_swot_analysis
+from analysis_utils import analyze_numeric, correlation_plot, chi_square_analysis, t_test_analysis
 
 # ✅ Init Firebase
 init_firebase()
 
 # ✅ Streamlit Page Setup
-st.set_page_config(page_title="📊 Smart Data Analyzer", layout="wide")
-st.title("🧠 Client Feedback Analyzer")
+st.set_page_config(page_title="📊 Client Feedback Analyzer", layout="wide")
+st.title("📊 Client Feedback Analyzer")
 
 # ✅ Login Panel
 st.sidebar.header("🔐 Login")
@@ -33,9 +37,9 @@ if login:
 
 if not login_successful:
     st.info("Please log in to access the analyzer.")
-    st.stop()  # 👈 Giriş yoksa kalan kod çalışmaz
+    st.stop()
 
-# ✅ OpenAI API Client
+# ✅ OpenAI API Client (API key only in secrets)
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ✅ AI Yorumlama Fonksiyonu
@@ -90,7 +94,6 @@ if uploaded_file:
         "Numeric Summary", "Correlation Matrix", "Chi-Square Test", "T-Test"
     ])
 
-    # 👇 Analizler
     if option == "Numeric Summary":
         result = analyze_numeric(df)
         st.write("### 📊 Descriptive Statistics")
